@@ -64,4 +64,16 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+INSERT OR IGNORE INTO settings (key, value) VALUES
+    ('chars_per_token',        '3.5'),
+    ('chunk_size',             '1000'),
+    ('chunk_overlap',          '0.125'),
+    ('m',                      '16'),
+    ('ef_construction',        '200'),
+    ('ef_search',              '100'),
+    ('top_k',                  '16'),
+    ('max_hops',               '1'),
+    ('hop_decay',              '0.5'),
+    ('expand_relation_types',  '');
 "#;

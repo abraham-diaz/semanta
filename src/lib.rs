@@ -5,6 +5,7 @@ use rusqlite::{Connection, Result, ffi};
 
 mod chunk;
 mod document;
+mod settings;
 mod storage;
 
 #[unsafe(no_mangle)]

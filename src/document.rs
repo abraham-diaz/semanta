@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, Result};
 
 use crate::chunk::chunk_text;
+use crate::settings;
 
 pub trait DocumentExtractor {
     fn extract(&self, content: &str) -> String;
@@ -37,12 +38,11 @@ pub fn add_document(
     )?;
     let document_id = db.last_insert_rowid();
 
-    let chunks = chunk_text(
-        &extracted,
-        DEFAULT_CHUNK_SIZE_TOKENS,
-        DEFAULT_CHARS_PER_TOKEN,
-        DEFAULT_OVERLAP_RATIO,
-    );
+    let chunk_size_tokens = settings::get_usize(db, "chunk_size", DEFAULT_CHUNK_SIZE_TOKENS)?;
+    let chars_per_token = settings::get_f64(db, "chars_per_token", DEFAULT_CHARS_PER_TOKEN)?;
+    let overlap_ratio = settings::get_f64(db, "chunk_overlap", DEFAULT_OVERLAP_RATIO)?;
+
+    let chunks = chunk_text(&extracted, chunk_size_tokens, chars_per_token, overlap_ratio);
 
     for (position, chunk) in chunks.iter().enumerate() {
         db.execute(
