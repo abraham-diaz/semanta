@@ -1,0 +1,10 @@
+[package]
+name = "semanta"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusqlite = { version = "0.40", features = ["loadable_extension"] }
