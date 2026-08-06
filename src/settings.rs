@@ -12,6 +12,19 @@ pub fn get_f64(db: &Connection, key: &str, default: f64) -> Result<f64> {
         .unwrap_or(default))
 }
 
+/// `expand_relation_types` se guarda como texto separado por comas; vacío o
+/// ausente significa "todos los tipos", igual que en `Semanta_Design.md` sección 7.
+pub fn get_string_list(db: &Connection, key: &str) -> Result<Option<Vec<String>>> {
+    let raw = get_raw(db, key)?.unwrap_or_default();
+    let items: Vec<String> = raw
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect();
+
+    Ok(if items.is_empty() { None } else { Some(items) })
+}
+
 fn get_raw(db: &Connection, key: &str) -> Result<Option<String>> {
     db.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
         row.get(0)

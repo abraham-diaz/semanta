@@ -8,6 +8,8 @@ mod chunk;
 mod document;
 mod embedding;
 mod graph;
+mod ranking;
+mod search;
 mod settings;
 mod storage;
 mod util;
@@ -73,6 +75,20 @@ fn semanta_init(db: Connection) -> Result<bool> {
                 relation_type.as_deref(),
                 confidence,
             )
+        },
+    )?;
+
+    db.create_scalar_function(
+        "semanta_search",
+        -1,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            let vector: Vec<u8> = ctx.get(0)?;
+            let top_k: Option<i64> = if ctx.len() > 1 { ctx.get(1)? } else { None };
+            let expand: Option<bool> = if ctx.len() > 2 { ctx.get(2)? } else { None };
+
+            let conn = unsafe { ctx.get_connection()? };
+            search::search(&conn, &vector, top_k, expand)
         },
     )?;
 

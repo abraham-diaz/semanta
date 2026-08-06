@@ -183,6 +183,14 @@ fn current_appendable_segment(db: &Connection) -> Result<(i64, usize, usize, i64
     Ok((segment_id, m, ef_construction, 0))
 }
 
+/// hnsw_rs::DistL2 devuelve `‖a-b‖` (no al cuadrado) sobre vectores ya normalizados
+/// a norma unitaria. Para vectores unitarios, ‖a-b‖² = 2 - 2·cos(a,b), así que
+/// cos(a,b) = 1 - distance²/2 recupera exactamente la similitud coseno (sección 5
+/// del diseño). Vive aquí porque es el ANN Engine quien conoce la métrica interna.
+pub fn distance_to_similarity(distance: f32) -> f32 {
+    1.0 - (distance * distance) / 2.0
+}
+
 fn normalize(vector: &[f32]) -> Vec<f32> {
     let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm == 0.0 {
