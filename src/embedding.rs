@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Error, OptionalExtension, Result};
 
 use crate::ann;
+use crate::settings;
 use crate::util::unix_timestamp;
 
 pub fn store_embedding(
@@ -9,7 +10,7 @@ pub fn store_embedding(
     vector: &[u8],
     model_name: &str,
     dimension: i64,
-) -> Result<i64> {
+) -> Result<String> {
     let expected_bytes = dimension as usize * std::mem::size_of::<f32>();
     if vector.len() != expected_bytes {
         return Err(Error::UserFunctionError(
@@ -24,14 +25,21 @@ pub fn store_embedding(
     }
 
     let embedding_model_id = resolve_embedding_model(db, model_name, dimension)?;
-    let segment_id = ann::insert(db, chunk_id, &bytes_to_f32(vector))?;
+    let query_vector = bytes_to_f32(vector);
+    let segment_id = ann::insert(db, chunk_id, &query_vector)?;
 
     db.execute(
         "INSERT INTO embeddings (chunk_id, embedding_model_id, segment_id, vector) VALUES (?1, ?2, ?3, ?4)",
         (chunk_id, embedding_model_id, segment_id, vector),
     )?;
 
-    Ok(chunk_id)
+    let top_k = settings::get_usize(db, "top_k", 16)?;
+    let candidates: Vec<(i64, f32)> = ann::search(db, &query_vector, top_k)?
+        .into_iter()
+        .filter(|(candidate_chunk_id, _)| *candidate_chunk_id != chunk_id)
+        .collect();
+
+    Ok(candidates_to_json(&candidates))
 }
 
 fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
@@ -39,6 +47,14 @@ fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect()
+}
+
+fn candidates_to_json(candidates: &[(i64, f32)]) -> String {
+    let items: Vec<String> = candidates
+        .iter()
+        .map(|(chunk_id, distance)| format!("{{\"chunk_id\":{},\"distance\":{}}}", chunk_id, distance))
+        .collect();
+    format!("[{}]", items.join(","))
 }
 
 fn resolve_embedding_model(db: &Connection, model_name: &str, dimension: i64) -> Result<i64> {

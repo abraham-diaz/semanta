@@ -46,6 +46,37 @@ pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<i64> {
     Ok(segment_id)
 }
 
+pub fn search(db: &Connection, query: &[f32], top_k: usize) -> Result<Vec<(i64, f32)>> {
+    let normalized = normalize(query);
+    let ef_search = settings::get_usize(db, "ef_search", 100)?;
+
+    let mut segment_ids = Vec::new();
+    {
+        let mut stmt = db.prepare("SELECT id FROM segments")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            segment_ids.push(row.get::<_, i64>(0)?);
+        }
+    }
+
+    let mut candidates = Vec::new();
+    {
+        let segments = segments().lock().unwrap();
+        for segment_id in segment_ids {
+            if let Some(hnsw) = segments.get(&segment_id) {
+                for neighbour in hnsw.search(&normalized, top_k, ef_search) {
+                    candidates.push((neighbour.get_origin_id() as i64, neighbour.get_distance()));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    candidates.truncate(top_k);
+
+    Ok(candidates)
+}
+
 fn current_appendable_segment(db: &Connection) -> Result<(i64, usize, usize, i64)> {
     let existing = db
         .query_row(
