@@ -39,15 +39,7 @@ pub fn store_embedding(
         .filter(|(candidate_chunk_id, _)| *candidate_chunk_id != chunk_id)
         .collect();
 
-    Ok(candidates_to_json(&candidates))
-}
-
-fn candidates_to_json(candidates: &[(i64, f32)]) -> String {
-    let items: Vec<String> = candidates
-        .iter()
-        .map(|(chunk_id, distance)| format!("{{\"chunk_id\":{},\"distance\":{}}}", chunk_id, distance))
-        .collect();
-    format!("[{}]", items.join(","))
+    Ok(ann::candidates_to_json(&candidates))
 }
 
 fn resolve_embedding_model(db: &Connection, model_name: &str, dimension: i64) -> Result<i64> {

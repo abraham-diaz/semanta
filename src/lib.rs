@@ -79,6 +79,19 @@ fn semanta_init(db: Connection) -> Result<bool> {
     )?;
 
     db.create_scalar_function(
+        "semanta_get_candidates",
+        -1,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            let chunk_id: i64 = ctx.get(0)?;
+            let top_k: Option<i64> = if ctx.len() > 1 { ctx.get(1)? } else { None };
+
+            let conn = unsafe { ctx.get_connection()? };
+            graph::get_candidates(&conn, chunk_id, top_k)
+        },
+    )?;
+
+    db.create_scalar_function(
         "semanta_search",
         -1,
         FunctionFlags::SQLITE_UTF8,

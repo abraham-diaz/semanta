@@ -199,6 +199,17 @@ fn normalize(vector: &[f32]) -> Vec<f32> {
     vector.iter().map(|x| x / norm).collect()
 }
 
+/// Formato JSON compartido por `semanta_store_embedding` y `semanta_get_candidates`
+/// para devolver candidatos (chunk_id, distancia) al usuario, que los pasa a su
+/// propio LLM para evaluar relaciones (Graph Engine, sección 6 del diseño).
+pub fn candidates_to_json(candidates: &[(i64, f32)]) -> String {
+    let items: Vec<String> = candidates
+        .iter()
+        .map(|(chunk_id, distance)| format!("{{\"chunk_id\":{},\"distance\":{}}}", chunk_id, distance))
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
 pub(crate) fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
