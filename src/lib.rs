@@ -7,6 +7,7 @@ mod ann;
 mod chunk;
 mod document;
 mod embedding;
+mod graph;
 mod settings;
 mod storage;
 mod util;
@@ -51,6 +52,27 @@ fn semanta_init(db: Connection) -> Result<bool> {
 
             let conn = unsafe { ctx.get_connection()? };
             embedding::store_embedding(&conn, chunk_id, &vector, &model_name, dimension)
+        },
+    )?;
+
+    db.create_scalar_function(
+        "semanta_store_relation",
+        4,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            let from_chunk_id: i64 = ctx.get(0)?;
+            let to_chunk_id: i64 = ctx.get(1)?;
+            let relation_type: Option<String> = ctx.get(2)?;
+            let confidence: Option<f64> = ctx.get(3)?;
+
+            let conn = unsafe { ctx.get_connection()? };
+            graph::store_relation(
+                &conn,
+                from_chunk_id,
+                to_chunk_id,
+                relation_type.as_deref(),
+                confidence,
+            )
         },
     )?;
 
