@@ -78,6 +78,11 @@ fn semanta_init(db: Connection) -> Result<bool> {
         },
     )?;
 
+    db.create_scalar_function("semanta_rebuild_graph", 0, FunctionFlags::SQLITE_UTF8, |ctx| {
+        let conn = unsafe { ctx.get_connection()? };
+        ann::rebuild(&conn)
+    })?;
+
     db.create_scalar_function(
         "semanta_get_candidates",
         -1,

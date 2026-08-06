@@ -150,6 +150,39 @@ pub fn search(db: &Connection, query: &[f32], top_k: usize) -> Result<Vec<(i64, 
     Ok(candidates)
 }
 
+/// `semanta_rebuild_graph()`: reset manual total del ANN Engine (sección 5).
+/// Borra todos los segmentos (en memoria y en `segments`) y reinserta cada
+/// embedding ya guardado, en orden de `chunk_id`, bajo los `settings` actuales
+/// — la misma ruta que `semanta_store_embedding` usa al insertar por primera
+/// vez, así que el resultado es indistinguible de haber cargado el corpus desde
+/// cero con `M`/`ef_construction` uniformes. `relations` no se toca: reevaluar
+/// candidatos tras un rebuild queda fuera de alcance (sección 10 del diseño).
+pub fn rebuild(db: &Connection) -> Result<i64> {
+    segments().lock().unwrap().clear();
+    db.execute("DELETE FROM segments", [])?;
+
+    let mut rows = Vec::new();
+    {
+        let mut stmt = db.prepare("SELECT chunk_id, vector FROM embeddings ORDER BY chunk_id")?;
+        let mut query_rows = stmt.query([])?;
+        while let Some(row) = query_rows.next()? {
+            rows.push((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?));
+        }
+    }
+
+    let reindexed = rows.len() as i64;
+    for (chunk_id, vector) in rows {
+        let query_vector = bytes_to_f32(&vector);
+        let segment_id = insert(db, chunk_id, &query_vector)?;
+        db.execute(
+            "UPDATE embeddings SET segment_id = ?1 WHERE chunk_id = ?2",
+            (segment_id, chunk_id),
+        )?;
+    }
+
+    Ok(reindexed)
+}
+
 fn current_appendable_segment(db: &Connection) -> Result<(i64, usize, usize, i64)> {
     let existing = db
         .query_row(
