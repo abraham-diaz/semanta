@@ -4,8 +4,7 @@
 
 /target
 
-# Markdown
-*.md
-
-# Claude 
-Claude.md
+# Design docs (local only)
+CLAUDE.md
+Semanta_Design.md
+Semanta_Overview.md
