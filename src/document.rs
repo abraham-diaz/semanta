@@ -1,9 +1,8 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use rusqlite::{Connection, Result};
 
 use crate::chunk::chunk_text;
 use crate::settings;
+use crate::util::unix_timestamp;
 
 pub trait DocumentExtractor {
     fn extract(&self, content: &str) -> String;
@@ -61,11 +60,4 @@ fn content_hash(content: &str) -> String {
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     format!("{:x}", hasher.finish())
-}
-
-fn unix_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_secs() as i64
 }

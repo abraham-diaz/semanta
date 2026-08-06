@@ -7,4 +7,5 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
+hnsw_rs = "0.3.4"
 rusqlite = { version = "0.40", features = ["loadable_extension", "functions"] }

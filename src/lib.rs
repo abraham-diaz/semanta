@@ -3,10 +3,13 @@ use std::os::raw::{c_char, c_int};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, Result, ffi};
 
+mod ann;
 mod chunk;
 mod document;
+mod embedding;
 mod settings;
 mod storage;
+mod util;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_semanta_init(
@@ -32,6 +35,21 @@ fn semanta_init(db: Connection) -> Result<bool> {
 
             let conn = unsafe { ctx.get_connection()? };
             document::add_document(&conn, &name, &content, metadata.as_deref(), tags.as_deref())
+        },
+    )?;
+
+    db.create_scalar_function(
+        "semanta_store_embedding",
+        4,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            let chunk_id: i64 = ctx.get(0)?;
+            let vector: Vec<u8> = ctx.get(1)?;
+            let model_name: String = ctx.get(2)?;
+            let dimension: i64 = ctx.get(3)?;
+
+            let conn = unsafe { ctx.get_connection()? };
+            embedding::store_embedding(&conn, chunk_id, &vector, &model_name, dimension)
         },
     )?;
 
