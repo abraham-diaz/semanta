@@ -1,7 +1,7 @@
 use rusqlite::{Connection, Error, OptionalExtension, Result};
 
 use crate::ann;
-use crate::settings;
+use crate::storage::settings;
 use crate::util::unix_timestamp;
 
 pub fn store_embedding(

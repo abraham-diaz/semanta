@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use hnsw_rs::prelude::*;
-use rusqlite::{Connection, Error, OptionalExtension, Result};
+mod persistence;
 
-use crate::settings;
+use hnsw_rs::prelude::*;
+use rusqlite::{Connection, OptionalExtension, Result};
+
+use crate::storage::settings;
 use crate::util::unix_timestamp;
 
 pub const SEGMENT_MAX_SIZE: i64 = 10_000;
 const MAX_LAYER: usize = 16;
-const DUMP_BASENAME: &str = "segment";
 
 type Segment = Hnsw<'static, f32, DistL2>;
 
@@ -19,9 +20,9 @@ fn segments() -> &'static Mutex<HashMap<i64, Segment>> {
     SEGMENTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Carga en memoria, desde SQLite, el estado del ANN Engine al arrancar el proceso:
-/// los segmentos `sealed` se recargan directamente de su `index_blob`, el segmento
-/// `appendable` (si existe) se reconstruye reinsertando sus chunks en orden.
+/// Loads the ANN Engine's state into memory from SQLite when the process starts:
+/// `sealed` segments are reloaded directly from their `index_blob`, the
+/// `appendable` segment (if any) is rebuilt by reinserting its chunks in order.
 pub fn reload(db: &Connection) -> Result<()> {
     reload_sealed_segments(db)?;
     reload_appendable_segment(db)?;
@@ -41,7 +42,7 @@ fn reload_sealed_segments(db: &Connection) -> Result<()> {
     }
 
     for (segment_id, blob) in sealed {
-        let hnsw = load_from_blob(segment_id, &blob).map_err(to_sql_error)?;
+        let hnsw = persistence::load_from_blob(segment_id, &blob).map_err(persistence::to_sql_error)?;
         segments().lock().unwrap().insert(segment_id, hnsw);
     }
 
@@ -108,7 +109,7 @@ pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<i64> {
             let hnsw = segments
                 .get(&segment_id)
                 .expect("el segmento recien insertado debe estar en memoria");
-            dump_to_blob(segment_id, hnsw).map_err(to_sql_error)?
+            persistence::dump_to_blob(segment_id, hnsw).map_err(persistence::to_sql_error)?
         };
         db.execute(
             "UPDATE segments SET status = 'sealed', sealed_at = ?1, index_blob = ?2 WHERE id = ?3",
@@ -150,13 +151,13 @@ pub fn search(db: &Connection, query: &[f32], top_k: usize) -> Result<Vec<(i64, 
     Ok(candidates)
 }
 
-/// `semanta_rebuild_graph()`: reset manual total del ANN Engine (sección 5).
-/// Borra todos los segmentos (en memoria y en `segments`) y reinserta cada
-/// embedding ya guardado, en orden de `chunk_id`, bajo los `settings` actuales
-/// — la misma ruta que `semanta_store_embedding` usa al insertar por primera
-/// vez, así que el resultado es indistinguible de haber cargado el corpus desde
-/// cero con `M`/`ef_construction` uniformes. `relations` no se toca: reevaluar
-/// candidatos tras un rebuild queda fuera de alcance (sección 10 del diseño).
+/// `semanta_rebuild_graph()`: full manual reset of the ANN Engine (section 5).
+/// Deletes all segments (in memory and in `segments`) and reinserts every
+/// already-stored embedding, in `chunk_id` order, under the current `settings`
+/// — the same path `semanta_store_embedding` uses on first insert, so the
+/// result is indistinguishable from having loaded the corpus from scratch with
+/// a uniform `M`/`ef_construction`. `relations` is untouched: re-evaluating
+/// candidates after a rebuild is out of scope (design section 10).
 pub fn rebuild(db: &Connection) -> Result<i64> {
     segments().lock().unwrap().clear();
     db.execute("DELETE FROM segments", [])?;
@@ -216,10 +217,10 @@ fn current_appendable_segment(db: &Connection) -> Result<(i64, usize, usize, i64
     Ok((segment_id, m, ef_construction, 0))
 }
 
-/// hnsw_rs::DistL2 devuelve `‖a-b‖` (no al cuadrado) sobre vectores ya normalizados
-/// a norma unitaria. Para vectores unitarios, ‖a-b‖² = 2 - 2·cos(a,b), así que
-/// cos(a,b) = 1 - distance²/2 recupera exactamente la similitud coseno (sección 5
-/// del diseño). Vive aquí porque es el ANN Engine quien conoce la métrica interna.
+/// hnsw_rs::DistL2 returns `‖a-b‖` (not squared) over vectors already normalized
+/// to unit norm. For unit vectors, ‖a-b‖² = 2 - 2·cos(a,b), so cos(a,b) =
+/// 1 - distance²/2 recovers cosine similarity exactly (design section 5). Lives
+/// here because the ANN Engine is the one that knows the internal metric.
 pub fn distance_to_similarity(distance: f32) -> f32 {
     1.0 - (distance * distance) / 2.0
 }
@@ -232,9 +233,9 @@ fn normalize(vector: &[f32]) -> Vec<f32> {
     vector.iter().map(|x| x / norm).collect()
 }
 
-/// Formato JSON compartido por `semanta_store_embedding` y `semanta_get_candidates`
-/// para devolver candidatos (chunk_id, distancia) al usuario, que los pasa a su
-/// propio LLM para evaluar relaciones (Graph Engine, sección 6 del diseño).
+/// JSON format shared by `semanta_store_embedding` and `semanta_get_candidates`
+/// to return candidates (chunk_id, distance) to the user, who passes them to
+/// their own LLM to evaluate relations (Graph Engine, design section 6).
 pub fn candidates_to_json(candidates: &[(i64, f32)]) -> String {
     let items: Vec<String> = candidates
         .iter()
@@ -248,51 +249,4 @@ pub(crate) fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect()
-}
-
-fn dump_dir(prefix: &str, segment_id: i64) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("semanta-{prefix}-{segment_id}"))
-}
-
-/// Vuelca un segmento sellado a un BLOB: hnswlib-rs solo sabe volcar a ficheros
-/// (un `.hnsw.graph` + un `.hnsw.data`), así que pasamos por un directorio temporal
-/// y concatenamos ambos ficheros en un solo BLOB, con la longitud del primero como
-/// prefijo para poder separarlos de nuevo al recargar.
-fn dump_to_blob(segment_id: i64, hnsw: &Segment) -> anyhow::Result<Vec<u8>> {
-    let dir = dump_dir("dump", segment_id);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir)?;
-
-    let basename = hnsw.file_dump(&dir, DUMP_BASENAME)?;
-    let graph_bytes = std::fs::read(dir.join(format!("{basename}.hnsw.graph")))?;
-    let data_bytes = std::fs::read(dir.join(format!("{basename}.hnsw.data")))?;
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let mut blob = Vec::with_capacity(4 + graph_bytes.len() + data_bytes.len());
-    blob.extend_from_slice(&(graph_bytes.len() as u32).to_le_bytes());
-    blob.extend_from_slice(&graph_bytes);
-    blob.extend_from_slice(&data_bytes);
-    Ok(blob)
-}
-
-fn load_from_blob(segment_id: i64, blob: &[u8]) -> anyhow::Result<Segment> {
-    let graph_len = u32::from_le_bytes(blob[0..4].try_into()?) as usize;
-    let graph_bytes = &blob[4..4 + graph_len];
-    let data_bytes = &blob[4 + graph_len..];
-
-    let dir = dump_dir("load", segment_id);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join(format!("{DUMP_BASENAME}.hnsw.graph")), graph_bytes)?;
-    std::fs::write(dir.join(format!("{DUMP_BASENAME}.hnsw.data")), data_bytes)?;
-
-    let io: &'static mut HnswIo = Box::leak(Box::new(HnswIo::new(&dir, DUMP_BASENAME)));
-    let hnsw = io.load_hnsw::<f32, DistL2>()?;
-
-    let _ = std::fs::remove_dir_all(&dir);
-    Ok(hnsw)
-}
-
-fn to_sql_error(err: anyhow::Error) -> Error {
-    Error::UserFunctionError(err.to_string().into())
 }

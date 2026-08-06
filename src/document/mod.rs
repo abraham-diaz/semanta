@@ -1,7 +1,10 @@
 use rusqlite::{Connection, Result};
 
-use crate::chunk::chunk_text;
-use crate::settings;
+mod chunk;
+
+use chunk::chunk_text;
+
+use crate::storage::settings;
 use crate::util::unix_timestamp;
 
 pub trait DocumentExtractor {

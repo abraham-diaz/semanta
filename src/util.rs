@@ -7,9 +7,9 @@ pub fn unix_timestamp() -> i64 {
         .as_secs() as i64
 }
 
-/// `relation_type` es vocabulario libre aportado por el usuario (sección 6 del
-/// diseño): puede traer comillas o barras invertidas, así que hay que escaparlo
-/// antes de incrustarlo en el JSON que arma `semanta_search`.
+/// `relation_type` is free-form vocabulary provided by the user (design section
+/// 6): it may contain quotes or backslashes, so it has to be escaped before
+/// embedding it in the JSON that `semanta_search` builds.
 pub fn json_escape(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for c in text.chars() {
