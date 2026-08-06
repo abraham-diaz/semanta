@@ -26,7 +26,7 @@ SQLite actúa como almacén puro. Toda la lógica de búsqueda e indexado vive e
 | `documents` | id, name, hash, created_at, metadata, tags |
 | `chunks` | id, document_id (FK), text, position |
 | `embedding_models` | id, model_name, dimension, generated_at, parameters — registra qué modelo generó cada embedding (dato que aporta el usuario, no lo calcula Semanta) |
-| `embeddings` | chunk_id (FK 1:1), embedding_model_id (FK), vector (BLOB) |
+| `embeddings` | chunk_id (FK 1:1), embedding_model_id (FK), segment_id (FK, indexado), vector (BLOB) — `segment_id` registra a qué segmento HNSW se asignó el vector al insertarlo, necesario para reconstruir el segmento `appendable` al arrancar (ver sección 5): sin esta columna no hay forma de saber qué chunks reinsertar |
 | `segments` | id, status (`appendable`/`sealed`), m, ef_construction, entry_point_node_id, top_layer, node_count, index_blob (BLOB, dump nativo de `hnswlib-rs`; `NULL` mientras el segmento está `appendable`), created_at, sealed_at — cada fila es un HNSW independiente y autocontenido (ver sección 5). `m`/`ef_construction` quedan fijados por fila al crearse: no se leen en vivo de `settings` |
 | `relations` | from_chunk_id, to_chunk_id, relation_type (texto libre, nullable), confidence — el grafo de conocimiento semántico. Índice en ambas columnas de chunk_id: se consulta en las dos direcciones en cada búsqueda (Ranking Engine, sección 7), no solo al insertar |
 | `settings` | key, value — parámetros configurables del motor |

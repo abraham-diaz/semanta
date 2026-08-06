@@ -30,12 +30,6 @@ CREATE TABLE IF NOT EXISTS embedding_models (
     parameters   TEXT
 );
 
-CREATE TABLE IF NOT EXISTS embeddings (
-    chunk_id           INTEGER PRIMARY KEY REFERENCES chunks(id),
-    embedding_model_id INTEGER NOT NULL REFERENCES embedding_models(id),
-    vector             BLOB NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS segments (
     id                  INTEGER PRIMARY KEY,
     status              TEXT NOT NULL CHECK (status IN ('appendable', 'sealed')),
@@ -48,6 +42,15 @@ CREATE TABLE IF NOT EXISTS segments (
     created_at          INTEGER NOT NULL,
     sealed_at           INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    chunk_id           INTEGER PRIMARY KEY REFERENCES chunks(id),
+    embedding_model_id INTEGER NOT NULL REFERENCES embedding_models(id),
+    segment_id         INTEGER NOT NULL REFERENCES segments(id),
+    vector             BLOB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id);
 
 CREATE TABLE IF NOT EXISTS relations (
     from_chunk_id INTEGER NOT NULL REFERENCES chunks(id),

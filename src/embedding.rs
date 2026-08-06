@@ -24,13 +24,12 @@ pub fn store_embedding(
     }
 
     let embedding_model_id = resolve_embedding_model(db, model_name, dimension)?;
+    let segment_id = ann::insert(db, chunk_id, &bytes_to_f32(vector))?;
 
     db.execute(
-        "INSERT INTO embeddings (chunk_id, embedding_model_id, vector) VALUES (?1, ?2, ?3)",
-        (chunk_id, embedding_model_id, vector),
+        "INSERT INTO embeddings (chunk_id, embedding_model_id, segment_id, vector) VALUES (?1, ?2, ?3, ?4)",
+        (chunk_id, embedding_model_id, segment_id, vector),
     )?;
-
-    ann::insert(db, chunk_id, &bytes_to_f32(vector))?;
 
     Ok(chunk_id)
 }

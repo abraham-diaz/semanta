@@ -18,7 +18,7 @@ fn segments() -> &'static Mutex<HashMap<i64, Segment>> {
     SEGMENTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<()> {
+pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<i64> {
     let normalized = normalize(vector);
     let (segment_id, m, ef_construction, node_count) = current_appendable_segment(db)?;
 
@@ -43,7 +43,7 @@ pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<()> {
         )?;
     }
 
-    Ok(())
+    Ok(segment_id)
 }
 
 fn current_appendable_segment(db: &Connection) -> Result<(i64, usize, usize, i64)> {
