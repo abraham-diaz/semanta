@@ -22,6 +22,7 @@ pub unsafe extern "C" fn sqlite3_semanta_init(
 
 fn semanta_init(db: Connection) -> Result<bool> {
     storage::create_schema(&db)?;
+    ann::reload(&db)?;
 
     db.create_scalar_function(
         "semanta_add_document",

@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use hnsw_rs::prelude::*;
-use rusqlite::{Connection, OptionalExtension, Result};
+use rusqlite::{Connection, Error, OptionalExtension, Result};
 
 use crate::settings;
 use crate::util::unix_timestamp;
 
 pub const SEGMENT_MAX_SIZE: i64 = 10_000;
 const MAX_LAYER: usize = 16;
+const DUMP_BASENAME: &str = "segment";
 
 type Segment = Hnsw<'static, f32, DistL2>;
 
@@ -16,6 +17,71 @@ static SEGMENTS: OnceLock<Mutex<HashMap<i64, Segment>>> = OnceLock::new();
 
 fn segments() -> &'static Mutex<HashMap<i64, Segment>> {
     SEGMENTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Carga en memoria, desde SQLite, el estado del ANN Engine al arrancar el proceso:
+/// los segmentos `sealed` se recargan directamente de su `index_blob`, el segmento
+/// `appendable` (si existe) se reconstruye reinsertando sus chunks en orden.
+pub fn reload(db: &Connection) -> Result<()> {
+    reload_sealed_segments(db)?;
+    reload_appendable_segment(db)?;
+    Ok(())
+}
+
+fn reload_sealed_segments(db: &Connection) -> Result<()> {
+    let mut sealed = Vec::new();
+    {
+        let mut stmt = db.prepare(
+            "SELECT id, index_blob FROM segments WHERE status = 'sealed' AND index_blob IS NOT NULL",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            sealed.push((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?));
+        }
+    }
+
+    for (segment_id, blob) in sealed {
+        let hnsw = load_from_blob(segment_id, &blob).map_err(to_sql_error)?;
+        segments().lock().unwrap().insert(segment_id, hnsw);
+    }
+
+    Ok(())
+}
+
+fn reload_appendable_segment(db: &Connection) -> Result<()> {
+    let appendable: Option<(i64, usize, usize)> = db
+        .query_row(
+            "SELECT id, m, ef_construction FROM segments WHERE status = 'appendable'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)? as usize,
+                    row.get::<_, i64>(2)? as usize,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((segment_id, m, ef_construction)) = appendable else {
+        return Ok(());
+    };
+
+    let hnsw =
+        Hnsw::<f32, DistL2>::new(m, SEGMENT_MAX_SIZE as usize, MAX_LAYER, ef_construction, DistL2 {});
+
+    let mut stmt =
+        db.prepare("SELECT chunk_id, vector FROM embeddings WHERE segment_id = ?1 ORDER BY chunk_id")?;
+    let mut rows = stmt.query([segment_id])?;
+    while let Some(row) = rows.next()? {
+        let chunk_id: i64 = row.get(0)?;
+        let vector: Vec<u8> = row.get(1)?;
+        let normalized = normalize(&bytes_to_f32(&vector));
+        hnsw.insert((normalized.as_slice(), chunk_id as usize));
+    }
+
+    segments().lock().unwrap().insert(segment_id, hnsw);
+    Ok(())
 }
 
 pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<i64> {
@@ -37,9 +103,16 @@ pub fn insert(db: &Connection, chunk_id: i64, vector: &[f32]) -> Result<i64> {
     )?;
 
     if new_count >= SEGMENT_MAX_SIZE {
+        let blob = {
+            let segments = segments().lock().unwrap();
+            let hnsw = segments
+                .get(&segment_id)
+                .expect("el segmento recien insertado debe estar en memoria");
+            dump_to_blob(segment_id, hnsw).map_err(to_sql_error)?
+        };
         db.execute(
-            "UPDATE segments SET status = 'sealed', sealed_at = ?1 WHERE id = ?2",
-            (unix_timestamp(), segment_id),
+            "UPDATE segments SET status = 'sealed', sealed_at = ?1, index_blob = ?2 WHERE id = ?3",
+            (unix_timestamp(), blob, segment_id),
         )?;
     }
 
@@ -116,4 +189,58 @@ fn normalize(vector: &[f32]) -> Vec<f32> {
         return vector.to_vec();
     }
     vector.iter().map(|x| x / norm).collect()
+}
+
+pub(crate) fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect()
+}
+
+fn dump_dir(prefix: &str, segment_id: i64) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("semanta-{prefix}-{segment_id}"))
+}
+
+/// Vuelca un segmento sellado a un BLOB: hnswlib-rs solo sabe volcar a ficheros
+/// (un `.hnsw.graph` + un `.hnsw.data`), así que pasamos por un directorio temporal
+/// y concatenamos ambos ficheros en un solo BLOB, con la longitud del primero como
+/// prefijo para poder separarlos de nuevo al recargar.
+fn dump_to_blob(segment_id: i64, hnsw: &Segment) -> anyhow::Result<Vec<u8>> {
+    let dir = dump_dir("dump", segment_id);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)?;
+
+    let basename = hnsw.file_dump(&dir, DUMP_BASENAME)?;
+    let graph_bytes = std::fs::read(dir.join(format!("{basename}.hnsw.graph")))?;
+    let data_bytes = std::fs::read(dir.join(format!("{basename}.hnsw.data")))?;
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let mut blob = Vec::with_capacity(4 + graph_bytes.len() + data_bytes.len());
+    blob.extend_from_slice(&(graph_bytes.len() as u32).to_le_bytes());
+    blob.extend_from_slice(&graph_bytes);
+    blob.extend_from_slice(&data_bytes);
+    Ok(blob)
+}
+
+fn load_from_blob(segment_id: i64, blob: &[u8]) -> anyhow::Result<Segment> {
+    let graph_len = u32::from_le_bytes(blob[0..4].try_into()?) as usize;
+    let graph_bytes = &blob[4..4 + graph_len];
+    let data_bytes = &blob[4 + graph_len..];
+
+    let dir = dump_dir("load", segment_id);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join(format!("{DUMP_BASENAME}.hnsw.graph")), graph_bytes)?;
+    std::fs::write(dir.join(format!("{DUMP_BASENAME}.hnsw.data")), data_bytes)?;
+
+    let io: &'static mut HnswIo = Box::leak(Box::new(HnswIo::new(&dir, DUMP_BASENAME)));
+    let hnsw = io.load_hnsw::<f32, DistL2>()?;
+
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(hnsw)
+}
+
+fn to_sql_error(err: anyhow::Error) -> Error {
+    Error::UserFunctionError(err.to_string().into())
 }

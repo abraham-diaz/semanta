@@ -25,7 +25,7 @@ pub fn store_embedding(
     }
 
     let embedding_model_id = resolve_embedding_model(db, model_name, dimension)?;
-    let query_vector = bytes_to_f32(vector);
+    let query_vector = ann::bytes_to_f32(vector);
     let segment_id = ann::insert(db, chunk_id, &query_vector)?;
 
     db.execute(
@@ -40,13 +40,6 @@ pub fn store_embedding(
         .collect();
 
     Ok(candidates_to_json(&candidates))
-}
-
-fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect()
 }
 
 fn candidates_to_json(candidates: &[(i64, f32)]) -> String {
