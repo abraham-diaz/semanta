@@ -12,8 +12,8 @@ pub fn get_f64(db: &Connection, key: &str, default: f64) -> Result<f64> {
         .unwrap_or(default))
 }
 
-/// `expand_relation_types` se guarda como texto separado por comas; vacío o
-/// ausente significa "todos los tipos", igual que en `Semanta_Design.md` sección 7.
+/// `expand_relation_types` is stored as a comma-separated string; empty or
+/// absent means "all types", matching `Semanta_Design.md` section 7.
 pub fn get_string_list(db: &Connection, key: &str) -> Result<Option<Vec<String>>> {
     let raw = get_raw(db, key)?.unwrap_or_default();
     let items: Vec<String> = raw

@@ -4,13 +4,10 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, Result, ffi};
 
 mod ann;
-mod chunk;
 mod document;
 mod embedding;
 mod graph;
 mod ranking;
-mod search;
-mod settings;
 mod storage;
 mod util;
 
@@ -106,7 +103,7 @@ fn semanta_init(db: Connection) -> Result<bool> {
             let expand: Option<bool> = if ctx.len() > 2 { ctx.get(2)? } else { None };
 
             let conn = unsafe { ctx.get_connection()? };
-            search::search(&conn, &vector, top_k, expand)
+            ranking::search(&conn, &vector, top_k, expand)
         },
     )?;
 

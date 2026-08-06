@@ -1,12 +1,12 @@
 use rusqlite::{Connection, Error, OptionalExtension, Result};
 
 use crate::ann;
-use crate::settings;
+use crate::storage::settings;
 
-/// Vecinos actuales de un chunk (Graph Engine, paso 1 de la sección 6): la misma
-/// búsqueda global fan-out + merge entre segmentos que usa `semanta_store_embedding`
-/// al insertar, por si se quieren re-consultar candidatos más adelante sin volver
-/// a insertar el chunk (p. ej. tras `semanta_rebuild_graph`).
+/// Current neighbours of a chunk (Graph Engine, step 1 of section 6): the same
+/// global fan-out + merge search across segments that `semanta_store_embedding`
+/// uses on insert, for when candidates need to be re-queried later without
+/// reinserting the chunk (e.g. after `semanta_rebuild_graph`).
 pub fn get_candidates(db: &Connection, chunk_id: i64, top_k: Option<i64>) -> Result<String> {
     let vector: Vec<u8> = db
         .query_row(
@@ -25,8 +25,9 @@ pub fn get_candidates(db: &Connection, chunk_id: i64, top_k: Option<i64>) -> Res
     };
 
     let query_vector = ann::bytes_to_f32(&vector);
-    // Se busca top_k + 1 porque el propio chunk siempre aparece como su vecino
-    // más cercano (distancia ~0) y hay que descartarlo antes de devolver top_k.
+    // We search for top_k + 1 because the chunk itself always shows up as its
+    // own nearest neighbour (distance ~0) and has to be discarded before
+    // returning top_k.
     let candidates: Vec<(i64, f32)> = ann::search(db, &query_vector, top_k + 1)?
         .into_iter()
         .filter(|(candidate_chunk_id, _)| *candidate_chunk_id != chunk_id)

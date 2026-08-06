@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use rusqlite::{Connection, Result};
 
 use crate::ann;
-use crate::settings;
+use crate::storage::settings;
 
-/// Una fila del resultado final de `semanta_search`: o bien un candidato ancla
-/// del ANN Engine (`origin = "ann"`), o bien un chunk alcanzado expandiendo el
-/// grafo de relaciones desde un ancla (`origin = "graph"`).
+/// One row of `semanta_search`'s final result: either an anchor candidate from
+/// the ANN Engine (`origin = "ann"`), or a chunk reached by expanding the
+/// relations graph from an anchor (`origin = "graph"`).
 pub struct RankedChunk {
     pub chunk_id: i64,
     pub score: f32,
@@ -16,18 +16,18 @@ pub struct RankedChunk {
     pub hop_count: Option<i64>,
 }
 
-/// Ranking Engine (sección 7 del diseño): expande los candidatos ancla del ANN
-/// consultando `relations` hasta `max_hops` saltos, puntúa cada expansión con
-/// `score_ancla × confidence × hop_decay^hops`, y devuelve una única lista
-/// mezclada, ordenada por score y deduplicada por `chunk_id`.
+/// Ranking Engine (design section 7): expands the ANN's anchor candidates by
+/// querying `relations` up to `max_hops` hops, scores each expansion with
+/// `anchor_score × confidence × hop_decay^hops`, and returns a single merged
+/// list, sorted by score and deduplicated by `chunk_id`.
 pub fn expand_and_rank(db: &Connection, anchors: &[(i64, f32)], top_k: usize) -> Result<Vec<RankedChunk>> {
     let max_hops = settings::get_usize(db, "max_hops", 1)?;
     let hop_decay = settings::get_f64(db, "hop_decay", 0.5)? as f32;
     let allowed_types = settings::get_string_list(db, "expand_relation_types")?;
 
     let mut best: HashMap<i64, RankedChunk> = HashMap::new();
-    // Frontera de expansión: (chunk_id desde el que expandir, score del ancla
-    // de origen, producto de confidences acumuladas en la cadena hasta aquí).
+    // Expansion frontier: (chunk_id to expand from, the originating anchor's
+    // score, product of confidences accumulated along the chain so far).
     let mut frontier: Vec<(i64, f32, f32)> = Vec::with_capacity(anchors.len());
 
     for &(chunk_id, distance) in anchors {
@@ -86,11 +86,11 @@ pub fn expand_and_rank(db: &Connection, anchors: &[(i64, f32)], top_k: usize) ->
     Ok(results)
 }
 
-/// Vecinos de `chunk_id` en `relations`, en cualquier dirección, excluyendo
-/// `relation_type IS NULL` (pares evaluados sin relación — sección 6) y
-/// filtrando por `expand_relation_types` si el usuario restringió el subconjunto.
-/// `confidence` ausente se trata como 1.0 (sin penalización) porque guardarla es
-/// opcional para el usuario al llamar a `semanta_store_relation`.
+/// Neighbours of `chunk_id` in `relations`, in either direction, excluding
+/// `relation_type IS NULL` (pairs evaluated with no relation — section 6) and
+/// filtering by `expand_relation_types` if the user restricted the subset.
+/// A missing `confidence` is treated as 1.0 (no penalty) because storing it is
+/// optional for the user when calling `semanta_store_relation`.
 fn relation_neighbours(
     db: &Connection,
     chunk_id: i64,

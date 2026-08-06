@@ -1,3 +1,5 @@
+pub mod settings;
+
 use rusqlite::{Connection, Result};
 
 pub fn create_schema(db: &Connection) -> Result<()> {

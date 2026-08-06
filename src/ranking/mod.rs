@@ -1,13 +1,17 @@
+mod expand;
+
 use rusqlite::{Connection, Result};
 
+use expand::RankedChunk;
+
 use crate::ann;
-use crate::ranking::{self, RankedChunk};
-use crate::settings;
+use crate::storage::settings;
 use crate::util::json_escape;
 
 /// `semanta_search(query_vector, top_k?, expand?)`: ANN Engine (fan-out + merge
-/// entre segmentos) y, si `expand` (default true), Ranking Engine por encima
-/// (sección 7 del diseño). `expand = false` da ANN puro, sin tocar `relations`.
+/// across segments) and, if `expand` (default true), the Ranking Engine on top
+/// (design section 7). `expand = false` gives pure ANN, without touching
+/// `relations`.
 pub fn search(db: &Connection, vector: &[u8], top_k: Option<i64>, expand: Option<bool>) -> Result<String> {
     let query_vector = ann::bytes_to_f32(vector);
     let top_k = match top_k {
@@ -19,10 +23,10 @@ pub fn search(db: &Connection, vector: &[u8], top_k: Option<i64>, expand: Option
     let anchors = ann::search(db, &query_vector, top_k)?;
 
     let results = if expand {
-        ranking::expand_and_rank(db, &anchors, top_k)?
+        expand::expand_and_rank(db, &anchors, top_k)?
     } else {
-        // ann::search ya devuelve distancia ascendente = similitud descendente,
-        // así que el orden se conserva al convertir uno a uno.
+        // ann::search already returns ascending distance = descending similarity,
+        // so the order is preserved when converting one by one.
         anchors
             .into_iter()
             .map(|(chunk_id, distance)| RankedChunk {
