@@ -29,7 +29,7 @@ pub fn store_embedding(
     let segment_id = ann::insert(db, chunk_id, &query_vector)?;
 
     db.execute(
-        "INSERT INTO embeddings (chunk_id, embedding_model_id, segment_id, vector) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT OR REPLACE INTO embeddings (chunk_id, embedding_model_id, segment_id, vector) VALUES (?1, ?2, ?3, ?4)",
         (chunk_id, embedding_model_id, segment_id, vector),
     )?;
 

@@ -9,19 +9,23 @@ pub fn create_schema(db: &Connection) -> Result<()> {
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS documents (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL,
-    hash       TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    metadata   TEXT,
-    tags       TEXT
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    external_id TEXT UNIQUE,
+    version     INTEGER NOT NULL DEFAULT 1,
+    hash        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    metadata    TEXT,
+    tags        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
     id          INTEGER PRIMARY KEY,
     document_id INTEGER NOT NULL REFERENCES documents(id),
     text        TEXT NOT NULL,
-    position    INTEGER NOT NULL
+    position    INTEGER NOT NULL,
+    version     INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (document_id, position)
 );
 
 CREATE TABLE IF NOT EXISTS embedding_models (

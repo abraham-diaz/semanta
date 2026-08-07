@@ -29,9 +29,10 @@ confirmed — something a plain vector store can't produce.
 ## Status
 
 The core described in `Semanta_Design.md` (sections 1–9) is implemented and
-verified end-to-end. All six SQL functions below work against a real
-SQLite connection with HNSW-backed search, segment sealing/reload across
-process restarts, and graph-expanded ranking.
+verified end-to-end, and update/delete (section 10) closes the gap that was
+originally left open there. All eight SQL functions below work against a
+real SQLite connection with HNSW-backed search, segment sealing/reload
+across process restarts, and graph-expanded ranking.
 
 There is no automated test suite yet beyond a few unit tests for chunking —
 everything else has been verified manually by loading the compiled
@@ -86,12 +87,14 @@ src/
 
 | Function | Description |
 |---|---|
-| `semanta_add_document(name, content, metadata, tags)` | Extracts and chunks a document (Markdown for now), returns the new `document_id`. |
-| `semanta_store_embedding(chunk_id, vector, model_name, dimension)` | Stores a chunk's embedding, inserts it into the current HNSW segment (sealing it if it hits the size cap), and returns nearest-neighbour candidates as JSON for the caller to evaluate with their own LLM. |
+| `semanta_add_document(name, content, metadata, tags, external_id?)` | Version-aware upsert, keyed by the caller-supplied `external_id` (BYOE — falls back to the internal `document_id` if omitted, which means the document can never be recognised as "the same one" later). Same `external_id` + unchanged content is a no-op; changed content bumps `version` and re-chunks, reusing `chunk_id`s where the position still exists. Returns the `document_id`. |
+| `semanta_store_embedding(chunk_id, vector, model_name, dimension)` | Stores (upserts) a chunk's embedding, inserts it into the current HNSW segment (sealing it if it hits the size cap), and returns nearest-neighbour candidates as JSON for the caller to evaluate with their own LLM. |
 | `semanta_get_candidates(chunk_id, top_k?)` | Re-queries the current nearest neighbours of an already-stored chunk, without reinserting it. |
 | `semanta_store_relation(from_chunk_id, to_chunk_id, relation_type, confidence)` | Persists a semantic relation between two chunks (or records the pair as "evaluated, no relation" with a `NULL` type). |
 | `semanta_search(query_vector, top_k?, expand?)` | Semantic search: ANN fan-out + merge across segments, then (by default) expands and reorders results through the relations graph. `expand = 0` returns pure ANN results. |
 | `semanta_rebuild_graph()` | Full manual reset of the ANN index: deletes all segments and reinserts every stored embedding under the current settings. |
+| `semanta_graph_stats()` | Per-segment `total_nodes` vs `live_nodes`, so the caller can decide when a `semanta_rebuild_graph()` is worth its cost. |
+| `semanta_delete_document(external_id)` | Hard-deletes a document and everything under it (chunks, embeddings, relations) in one transaction. Errors if `external_id` doesn't exist. |
 
 Vectors are passed as raw little-endian `f32` bytes (4 bytes per
 dimension) — the same layout NumPy/`struct.pack` produce, no wrapper
@@ -147,7 +150,7 @@ def to_bytes(vector):
 
 # 1. Ingest — chunking is automatic, embeddings are BYOE
 doc_id = con.execute(
-    "SELECT semanta_add_document(?, ?, NULL, NULL)", ("manual.md", markdown_text)
+    "SELECT semanta_add_document(?, ?, NULL, NULL, ?)", ("manual.md", markdown_text, "manual-v1")
 ).fetchone()[0]
 
 for chunk_id, text in con.execute("SELECT id, text FROM chunks WHERE document_id = ?", (doc_id,)):
@@ -170,7 +173,7 @@ results = con.execute(
 
 ## Out of scope (for now)
 
-See section 10 of `Semanta_Design.md` for the full list — notably:
+See section 11 of `Semanta_Design.md` for the full list — notably:
 extractors beyond Markdown, structure-aware chunking, re-evaluating
 candidates after a rebuild, a minimum similarity threshold, parallelizing
 search across segments, and automated tests. None of these are implemented

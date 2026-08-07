@@ -26,16 +26,36 @@ fn semanta_init(db: Connection) -> Result<bool> {
 
     db.create_scalar_function(
         "semanta_add_document",
-        4,
+        -1,
         FunctionFlags::SQLITE_UTF8,
         |ctx| {
             let name: String = ctx.get(0)?;
             let content: String = ctx.get(1)?;
             let metadata: Option<String> = ctx.get(2)?;
             let tags: Option<String> = ctx.get(3)?;
+            let external_id: Option<String> = if ctx.len() > 4 { ctx.get(4)? } else { None };
 
             let conn = unsafe { ctx.get_connection()? };
-            document::add_document(&conn, &name, &content, metadata.as_deref(), tags.as_deref())
+            document::add_document(
+                &conn,
+                &name,
+                &content,
+                metadata.as_deref(),
+                tags.as_deref(),
+                external_id.as_deref(),
+            )
+        },
+    )?;
+
+    db.create_scalar_function(
+        "semanta_delete_document",
+        1,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            let external_id: String = ctx.get(0)?;
+
+            let conn = unsafe { ctx.get_connection()? };
+            document::delete_document(&conn, &external_id)
         },
     )?;
 
@@ -78,6 +98,11 @@ fn semanta_init(db: Connection) -> Result<bool> {
     db.create_scalar_function("semanta_rebuild_graph", 0, FunctionFlags::SQLITE_UTF8, |ctx| {
         let conn = unsafe { ctx.get_connection()? };
         ann::rebuild(&conn)
+    })?;
+
+    db.create_scalar_function("semanta_graph_stats", 0, FunctionFlags::SQLITE_UTF8, |ctx| {
+        let conn = unsafe { ctx.get_connection()? };
+        ann::stats(&conn)
     })?;
 
     db.create_scalar_function(
