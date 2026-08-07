@@ -210,30 +210,57 @@ fn l2_distance(a: &[f32], b: &[f32]) -> f32 {
 /// result is indistinguishable from having loaded the corpus from scratch with
 /// a uniform `M`/`ef_construction`. `relations` is untouched: re-evaluating
 /// candidates after a rebuild is out of scope (design section 11).
+///
+/// Between deleting `segments` and finishing the reinsert loop, live
+/// `embeddings.segment_id` rows briefly point at segments that no longer
+/// exist (each row is only fixed up once its own turn in the loop comes up)
+/// — a real `FOREIGN KEY` violation on any connection that enforces them
+/// (found by testing with one that does). `PRAGMA defer_foreign_keys` inside
+/// a `SAVEPOINT` postpones that check to `RELEASE`, by which point every row
+/// has been repointed at a real segment; `SAVEPOINT` (not `BEGIN`) so this
+/// still nests inside a transaction the caller may already have open, same
+/// reasoning as `document::delete_document`.
 pub fn rebuild(db: &Connection) -> Result<i64> {
-    segments().lock().unwrap().clear();
-    db.execute("DELETE FROM segments", [])?;
+    db.execute("SAVEPOINT semanta_rebuild_graph", [])?;
+    db.execute("PRAGMA defer_foreign_keys = ON", [])?;
 
-    let mut rows = Vec::new();
-    {
-        let mut stmt = db.prepare("SELECT chunk_id, vector FROM embeddings ORDER BY chunk_id")?;
-        let mut query_rows = stmt.query([])?;
-        while let Some(row) = query_rows.next()? {
-            rows.push((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?));
+    let result: Result<i64> = (|| {
+        segments().lock().unwrap().clear();
+        db.execute("DELETE FROM segments", [])?;
+
+        let mut rows = Vec::new();
+        {
+            let mut stmt = db.prepare("SELECT chunk_id, vector FROM embeddings ORDER BY chunk_id")?;
+            let mut query_rows = stmt.query([])?;
+            while let Some(row) = query_rows.next()? {
+                rows.push((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?));
+            }
+        }
+
+        let reindexed = rows.len() as i64;
+        for (chunk_id, vector) in rows {
+            let query_vector = bytes_to_f32(&vector);
+            let segment_id = insert(db, chunk_id, &query_vector)?;
+            db.execute(
+                "UPDATE embeddings SET segment_id = ?1 WHERE chunk_id = ?2",
+                (segment_id, chunk_id),
+            )?;
+        }
+
+        Ok(reindexed)
+    })();
+
+    match result {
+        Ok(reindexed) => {
+            db.execute("RELEASE semanta_rebuild_graph", [])?;
+            Ok(reindexed)
+        }
+        Err(err) => {
+            let _ = db.execute("ROLLBACK TO semanta_rebuild_graph", []);
+            let _ = db.execute("RELEASE semanta_rebuild_graph", []);
+            Err(err)
         }
     }
-
-    let reindexed = rows.len() as i64;
-    for (chunk_id, vector) in rows {
-        let query_vector = bytes_to_f32(&vector);
-        let segment_id = insert(db, chunk_id, &query_vector)?;
-        db.execute(
-            "UPDATE embeddings SET segment_id = ?1 WHERE chunk_id = ?2",
-            (segment_id, chunk_id),
-        )?;
-    }
-
-    Ok(reindexed)
 }
 
 /// `semanta_graph_stats()`: per-segment `total_nodes` (historical, everything

@@ -34,10 +34,12 @@ originally left open there. All eight SQL functions below work against a
 real SQLite connection with HNSW-backed search, segment sealing/reload
 across process restarts, and graph-expanded ranking.
 
-There is no automated test suite yet beyond a few unit tests for chunking —
-everything else has been verified manually by loading the compiled
-extension from Python's `sqlite3` module. See "Out of scope" below for
-what's deliberately not built yet.
+The update/delete flow has an automated `cargo test` suite (see "Testing"
+below) covering the document/chunk upsert, relation purging, the ANN
+candidate-dedup fix, and `semanta_delete_document`. Beyond that, everything
+has also been verified manually by loading the compiled extension from
+Python's `sqlite3` module with real embeddings and a real local LLM. See
+"Out of scope" below for what's deliberately not built yet.
 
 ## Design principles (already decided, see `Semanta_Design.md`)
 
@@ -139,6 +141,22 @@ con.enable_load_extension(True)
 con.load_extension("target/release/libsemanta")
 con.enable_load_extension(False)
 ```
+
+## Testing
+
+```sh
+cargo test --no-default-features --features testing
+```
+
+Plain `cargo test` only runs the chunking unit tests, on purpose: the
+default `extension` feature builds `rusqlite` in loadable-extension mode,
+which gets the SQLite C API from the host process at load time and has no
+usable standalone `Connection` — there's nothing for a normal `cargo test`
+to link against. The `testing` feature swaps in a real, statically-linked
+SQLite instead, so `#[cfg(test)]` code (`src/tests.rs`) can open an
+in-memory `Connection` and call `document::`/`embedding::`/`ann::`/`graph::`
+directly, without going through SQL function registration or loading a
+compiled `.so` at all.
 
 ## Quick example
 

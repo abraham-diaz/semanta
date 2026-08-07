@@ -9,4 +9,17 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.104"
 hnsw_rs = "0.3.4"
-rusqlite = { version = "0.40", features = ["loadable_extension", "functions"] }
+rusqlite = { version = "0.40", features = ["functions"] }
+
+[features]
+default = ["extension"]
+# The real build target: compiles rusqlite in loadable-extension mode, which
+# gets the SQLite C API from the host process at load time (sqlite3_semanta_init)
+# instead of linking a real SQLite. That means it has no usable Connection on
+# its own -- see `testing` below for why `cargo test` needs a different mode.
+extension = ["rusqlite/loadable_extension"]
+# Links a real, self-contained SQLite (no loadable-extension indirection) so
+# `#[cfg(test)]` code can open an in-memory Connection and call document::,
+# embedding::, ann::, graph:: functions directly. Run tests with:
+#   cargo test --no-default-features --features testing
+testing = ["rusqlite/bundled"]
