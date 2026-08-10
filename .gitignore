@@ -4,7 +4,5 @@
 
 /target
 
-# Design docs (local only)
+# Local-only: internal instructions for AI-assisted development
 CLAUDE.md
-Semanta_Design.md
-Semanta_Overview.md
