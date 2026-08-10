@@ -1,3 +1,5 @@
+pub mod settings;
+
 use rusqlite::{Connection, Result};
 
 pub fn create_schema(db: &Connection) -> Result<()> {
@@ -7,19 +9,23 @@ pub fn create_schema(db: &Connection) -> Result<()> {
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS documents (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL,
-    hash       TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    metadata   TEXT,
-    tags       TEXT
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    external_id TEXT UNIQUE,
+    version     INTEGER NOT NULL DEFAULT 1,
+    hash        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    metadata    TEXT,
+    tags        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
     id          INTEGER PRIMARY KEY,
     document_id INTEGER NOT NULL REFERENCES documents(id),
     text        TEXT NOT NULL,
-    position    INTEGER NOT NULL
+    position    INTEGER NOT NULL,
+    version     INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (document_id, position)
 );
 
 CREATE TABLE IF NOT EXISTS embedding_models (
@@ -28,12 +34,6 @@ CREATE TABLE IF NOT EXISTS embedding_models (
     dimension    INTEGER NOT NULL,
     generated_at INTEGER NOT NULL,
     parameters   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS embeddings (
-    chunk_id           INTEGER PRIMARY KEY REFERENCES chunks(id),
-    embedding_model_id INTEGER NOT NULL REFERENCES embedding_models(id),
-    vector             BLOB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS segments (
@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS segments (
     created_at          INTEGER NOT NULL,
     sealed_at           INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    chunk_id           INTEGER PRIMARY KEY REFERENCES chunks(id),
+    embedding_model_id INTEGER NOT NULL REFERENCES embedding_models(id),
+    segment_id         INTEGER NOT NULL REFERENCES segments(id),
+    vector             BLOB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id);
 
 CREATE TABLE IF NOT EXISTS relations (
     from_chunk_id INTEGER NOT NULL REFERENCES chunks(id),
@@ -64,4 +73,16 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+INSERT OR IGNORE INTO settings (key, value) VALUES
+    ('chars_per_token',        '3.5'),
+    ('chunk_size',             '1000'),
+    ('chunk_overlap',          '0.125'),
+    ('m',                      '16'),
+    ('ef_construction',        '200'),
+    ('ef_search',              '100'),
+    ('top_k',                  '16'),
+    ('max_hops',               '1'),
+    ('hop_decay',              '0.5'),
+    ('expand_relation_types',  '');
 "#;

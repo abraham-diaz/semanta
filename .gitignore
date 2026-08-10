@@ -4,8 +4,5 @@
 
 /target
 
-# Markdown
-*.md
-
-# Claude 
-Claude.md
+# Local-only: internal instructions for AI-assisted development
+CLAUDE.md

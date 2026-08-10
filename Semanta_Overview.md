@@ -1,127 +1,127 @@
 # Semanta
 
-## ¿Qué es Semanta?
+## What is Semanta?
 
-**Semanta** es un motor semántico embebido para SQLite que permite
-almacenar documentos, indexarlos, relacionarlos y recuperarlos mediante
-lenguaje natural.
+**Semanta** is an embedded semantic engine for SQLite that lets you
+store documents, index them, relate them, and retrieve them using
+natural language.
 
-Su objetivo no es ser simplemente una base de datos vectorial, sino
-ofrecer un pipeline completo para aplicaciones RAG sin depender de
-múltiples herramientas externas.
-
-------------------------------------------------------------------------
-
-# Objetivos
-
-Semanta busca simplificar el desarrollo de aplicaciones que trabajan con
-documentación técnica, manuales o bases de conocimiento.
-
-En lugar de construir un pipeline compuesto por numerosas librerías:
-
-Documento → Chunking → Embeddings → Base vectorial → Relaciones →
-Búsqueda → LLM
-
-el desarrollador únicamente necesita interactuar con Semanta.
+Its goal isn't to be just another vector database, but to offer a
+complete pipeline for RAG applications without depending on multiple
+external tools.
 
 ------------------------------------------------------------------------
 
-# Flujo de ingestión
+# Goals
 
-Cuando se incorpora un documento, Semanta ejecuta automáticamente el
-siguiente proceso:
+Semanta aims to simplify building applications that work with
+technical documentation, manuals, or knowledge bases.
 
-1.  Extraer el texto del documento.
-2.  Dividir el contenido en chunks.
-3.  Generar un embedding para cada chunk.
-4.  Buscar los vecinos semánticos más próximos mediante un índice ANN.
-5.  Utilizar un LLM para validar únicamente esos candidatos y detectar
-    relaciones semánticas.
-6.  Guardar dichas relaciones en un grafo de conocimiento.
-7.  Actualizar el índice vectorial.
-8.  Persistir toda la información en SQLite.
+Instead of building a pipeline composed of numerous libraries:
 
-Este enfoque evita comparar todos los chunks entre sí y permite escalar
-de forma eficiente.
+Document → Chunking → Embeddings → Vector store → Relations →
+Search → LLM
+
+the developer only needs to interact with Semanta.
 
 ------------------------------------------------------------------------
 
-# Información almacenada
+# Ingestion flow
 
-Semanta mantiene diferentes tipos de datos:
+When a document is added, Semanta automatically runs the following
+process:
 
-## Documentos
+1.  Extract the document's text.
+2.  Split the content into chunks.
+3.  Generate an embedding for each chunk.
+4.  Find the closest semantic neighbours via an ANN index.
+5.  Use an LLM to validate only those candidates and detect semantic
+    relations.
+6.  Store those relations in a knowledge graph.
+7.  Update the vector index.
+8.  Persist all of the information in SQLite.
 
--   Nombre
+This approach avoids comparing every chunk against every other one
+and allows scaling efficiently.
+
+------------------------------------------------------------------------
+
+# Stored information
+
+Semanta keeps several kinds of data:
+
+## Documents
+
+-   Name
 -   Hash
--   Fecha
--   Metadatos
--   Etiquetas
+-   Date
+-   Metadata
+-   Tags
 
 ## Chunks
 
--   Texto
--   Posición dentro del documento
--   Documento padre
+-   Text
+-   Position within the document
+-   Parent document
 
 ## Embeddings
 
-Un embedding por cada chunk.
+One embedding per chunk.
 
-## Índice ANN
+## ANN index
 
-Inicialmente basado en HNSW para realizar búsquedas rápidas.
+Initially based on HNSW for fast search.
 
 ## Knowledge Graph
 
-Relaciones semánticas entre chunks.
+Semantic relations between chunks.
 
-Ejemplos:
+Examples:
 
--   continúa
--   requiere
--   amplía
--   es ejemplo de
--   contradice
+-   continues
+-   requires
+-   extends
+-   is an example of
+-   contradicts
 
-Cada relación puede almacenar un nivel de confianza.
+Each relation can store a confidence level.
 
 ## Payload
 
-Metadatos indexables para realizar filtros durante las búsquedas.
+Indexable metadata for filtering during search.
 
-## Configuración
+## Configuration
 
-Información sobre los modelos utilizados:
+Information about the models in use:
 
--   Modelo de embeddings
--   Dimensión
--   Fecha de generación
--   Parámetros
-
-------------------------------------------------------------------------
-
-# Flujo de búsqueda
-
-Cuando el usuario realiza una consulta:
-
-1.  Se genera el embedding de la consulta.
-2.  Se consulta el índice ANN.
-3.  Se recuperan los mejores candidatos.
-4.  Se expanden utilizando el Knowledge Graph.
-5.  Se reordenan los resultados.
-6.  Se devuelve el contexto óptimo al LLM.
-
-De esta forma, el índice vectorial encuentra los puntos de entrada
-mientras que el grafo aporta contexto adicional.
+-   Embedding model
+-   Dimension
+-   Generation date
+-   Parameters
 
 ------------------------------------------------------------------------
 
-# Arquitectura
+# Search flow
 
-Semanta pretende funcionar como una capa semántica sobre SQLite.
+When the user runs a query:
 
-El núcleo estará dividido en módulos independientes:
+1.  The query's embedding is generated.
+2.  The ANN index is queried.
+3.  The best candidates are retrieved.
+4.  They're expanded using the Knowledge Graph.
+5.  The results are reordered.
+6.  The optimal context is returned to the LLM.
+
+This way, the vector index finds the entry points while the graph
+contributes additional context.
+
+------------------------------------------------------------------------
+
+# Architecture
+
+Semanta is meant to work as a semantic layer on top of SQLite.
+
+The core will be split into independent modules:
 
 -   Document Engine
 -   Chunk Engine
@@ -131,15 +131,15 @@ El núcleo estará dividido en módulos independientes:
 -   Ranking Engine
 -   Storage Engine
 
-Cada módulo podrá evolucionar sin afectar al resto del sistema.
+Each module can evolve without affecting the rest of the system.
 
 ------------------------------------------------------------------------
 
-# Filosofía
+# Philosophy
 
-Semanta no está ligado a una implementación concreta.
+Semanta isn't tied to any one implementation.
 
-Los proveedores serán intercambiables.
+Providers are meant to be interchangeable.
 
 ## Embeddings
 
@@ -148,15 +148,15 @@ Los proveedores serán intercambiables.
 -   Nomic
 -   OpenAI
 -   Gemma
--   Otros
+-   Others
 
 ## ANN
 
 -   HNSW
 -   IVF
--   Brute Force
+-   Brute force
 -   DiskANN
--   Futuras implementaciones
+-   Future implementations
 
 ## LLM
 
@@ -164,13 +164,13 @@ Los proveedores serán intercambiables.
 -   Ollama
 -   OpenAI
 -   Gemini
--   Cualquier proveedor compatible
+-   Any compatible provider
 
 ------------------------------------------------------------------------
 
-# API deseada
+# Desired API
 
-La experiencia del desarrollador debe ser extremadamente sencilla.
+The developer experience should be extremely simple.
 
 ``` csharp
 var semanta = new Semanta(database);
@@ -178,27 +178,28 @@ var semanta = new Semanta(database);
 semanta.AddDocument("manual.pdf");
 
 var results = semanta.Search(
-    "¿Cómo cambiar el aceite?"
+    "How do I change the oil?"
 );
 ```
 
-Toda la complejidad del pipeline queda encapsulada dentro de Semanta.
+All of the pipeline's complexity is meant to stay encapsulated inside
+Semanta.
 
 ------------------------------------------------------------------------
 
-# Visión
+# Vision
 
-Semanta no pretende ser únicamente una base de datos vectorial.
+Semanta doesn't aim to be just a vector database.
 
-Su objetivo es convertirse en un motor semántico embebido que combine:
+Its goal is to become an embedded semantic engine that combines:
 
--   Almacenamiento documental.
+-   Document storage.
 -   Chunking.
 -   Embeddings.
--   Índices ANN.
--   Grafo de conocimiento.
--   Recuperación híbrida.
--   Expansión automática del contexto.
+-   ANN indexes.
+-   Knowledge graph.
+-   Hybrid retrieval.
+-   Automatic context expansion.
 
-Todo ello integrado sobre SQLite mediante una arquitectura modular y
-extensible.
+All of it integrated on top of SQLite through a modular, extensible
+architecture.
