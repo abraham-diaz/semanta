@@ -2,6 +2,9 @@
 name = "semanta"
 version = "0.1.0"
 edition = "2024"
+description = "Embedded semantic engine for SQLite: HNSW-backed vector search plus an LLM-curated knowledge graph, exposed entirely through SQL."
+license = "MIT"
+repository = "https://github.com/abraham-diaz/semanta"
 
 [lib]
 crate-type = ["cdylib"]
