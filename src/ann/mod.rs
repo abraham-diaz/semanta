@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 mod persistence;
+#[cfg(all(test, feature = "testing"))]
+mod tests;
 
 use hnsw_rs::prelude::*;
 use rusqlite::{Connection, OptionalExtension, Result, params_from_iter};

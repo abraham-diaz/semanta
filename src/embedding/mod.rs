@@ -1,5 +1,8 @@
 use rusqlite::{Connection, Error, OptionalExtension, Result};
 
+#[cfg(all(test, feature = "testing"))]
+mod tests;
+
 use crate::ann;
 use crate::storage::settings;
 use crate::util::unix_timestamp;

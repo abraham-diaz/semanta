@@ -16,16 +16,17 @@ mod storage;
 // compile, so plain `cargo test` (default features = loadable-extension mode)
 // just skips it instead of failing every test with "SQLite API not
 // initialized" — run `cargo test --no-default-features --features testing`
-// to actually execute this module.
+// to actually run the `tests` submodules it backs (`ann::tests`,
+// `document::tests`, `embedding::tests`).
 #[cfg(all(test, feature = "testing"))]
-mod tests;
+mod test_support;
 mod util;
 
 // `extension_init2` only exists in rusqlite's loadable-extension mode (the
 // `extension` Cargo feature, on by default) — the `testing` feature swaps in
 // a normal linked SQLite instead, which has no such entry point and isn't
-// needed for it: `src/tests.rs` calls document::/embedding::/ann::/graph::
-// directly, bypassing this FFI boundary entirely.
+// needed for it: each engine's `tests` submodule calls document::/embedding::
+// /ann::/graph:: directly, bypassing this FFI boundary entirely.
 #[cfg(feature = "extension")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sqlite3_semanta_init(

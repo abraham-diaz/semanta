@@ -1,6 +1,8 @@
 use rusqlite::{Connection, Error, OptionalExtension, Result};
 
 mod chunk;
+#[cfg(all(test, feature = "testing"))]
+mod tests;
 
 use chunk::chunk_text;
 
