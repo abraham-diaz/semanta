@@ -6,3 +6,12 @@
 
 # Local-only: internal instructions for AI-assisted development
 CLAUDE.md
+
+# Python package: bundles a prebuilt binary that must be rebuilt per
+# platform, not committed (see python/README.md)
+python/semanta/*.so
+python/semanta/*.dylib
+python/semanta/*.dll
+python/build/
+python/*.egg-info/
+python/**/__pycache__/
